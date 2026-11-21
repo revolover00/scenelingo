@@ -204,7 +204,7 @@ test('back button returns to previous step without overwriting choices', async (
 test('webhook isolates tables by the current bot identity', async () => {
   queries.length = 0;
   await handler({ method: 'POST', body: { message: { chat: { id: 1, type: 'private' }, text: '/help' } } }, res());
-  assert.ok(queries.some(q => q.sql === 'CREATE SCHEMA IF NOT EXISTS "bot_123456"'));
+  assert.ok(!queries.some(q => q.sql.includes('CREATE SCHEMA')));
   assert.ok(queries.some(q => q.sql === 'SET search_path TO "bot_123456"'));
 });
 
@@ -263,4 +263,11 @@ test('unauthenticated updates are rejected before database or Bot API access', a
   const response = {status(code){assert.equal(code,403);return this;},send(){}};
   await rawHandler({method:'POST',body:{message:{text:'/start',chat:{id:1,type:'private'}}}}, response);
   assert.equal(queries.length,0); assert.equal(calls.length,0);
+});
+
+test('webhook requests never run database migrations', async () => {
+  queries.length = 0; calls.length = 0;
+  await handler({ method: 'POST', body: { message: { chat: { id: 1, type: 'private' }, from: { id: 1 }, text: '/level' } } }, res());
+  assert.ok(queries.some(q => q.sql.includes('SET search_path')));
+  assert.ok(!queries.some(q => /CREATE|ALTER TABLE|DROP CONSTRAINT/.test(q.sql)));
 });

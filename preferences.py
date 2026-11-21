@@ -1,29 +1,33 @@
-"""Validation shared by the subscriber settings and scheduling pipeline."""
+"""User preference validation."""
 from __future__ import annotations
-
 import json
 from pathlib import Path
-
-LANGUAGES = json.loads((Path(__file__).parent / 'languages.json').read_text(encoding='utf-8'))
-LANGUAGE_CODES = frozenset(language['code'] for language in LANGUAGES)
-MIN_INTERVAL_MINUTES = 30
-MAX_INTERVAL_MINUTES = 24 * 60
-
-
-def validate_language(code: str) -> str:
-    if code not in LANGUAGE_CODES:
-        raise ValueError('Unsupported language')
+def _load_languages():
+    path = Path(__file__).with_name("languages.json")
+    return json.loads(path.read_text(encoding="utf-8"))
+_LANGUAGES_DATA = _load_languages()
+LANGUAGES = _LANGUAGES_DATA
+CODES = {item["code"] for item in LANGUAGES}
+LANGUAGE_CODES = CODES
+LEVELS = ("A2", "B1", "B2", "C1", "C2")
+def validate_language(code: str):
+    if code not in CODES:
+        raise ValueError(f"Unsupported language: {code}")
     return code
-
-
-def validate_interval(value: str | int) -> int:
-    """Accept whole minutes only; never round fractional values silently."""
-    if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise ValueError('Interval must be a whole number of minutes')
-    text = str(value).strip()
-    if not text.isascii() or not text.isdecimal():
-        raise ValueError('Interval must be a whole number of minutes')
-    minutes = int(text)
-    if not MIN_INTERVAL_MINUTES <= minutes <= MAX_INTERVAL_MINUTES:
-        raise ValueError('Interval must be between 30 and 1440 minutes')
-    return minutes
+def validate_interval(value):
+    if isinstance(value, bool):
+        raise ValueError
+    if value is None or (isinstance(value, str) and value.strip() == ""):
+        raise ValueError
+    try:
+        if isinstance(value, str):
+            value = int(value.strip())
+        elif isinstance(value, float):
+            raise ValueError
+        else:
+            value = int(value)
+    except:
+        raise ValueError
+    if not (30 <= value <= 1440):
+        raise ValueError
+    return value

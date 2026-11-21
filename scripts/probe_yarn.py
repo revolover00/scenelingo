@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from clip_cafe import find_clip, matches
 
@@ -16,5 +17,5 @@ with TemporaryDirectory() as directory:
             clip = find_clip(expression, Path(directory))
             assert matches(expression, clip.quote)
             print(f'::notice title=Clip {lang}::{clip.title}; {clip.path.stat().st_size} bytes')
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - probe keeps testing other languages after any provider failure
             print(f'::warning title=Clip {lang} unavailable::{type(exc).__name__}: {exc}')

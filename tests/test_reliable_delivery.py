@@ -1,22 +1,23 @@
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from telegram.error import RetryAfter, Forbidden, TimedOut, BadRequest
+from telegram.error import BadRequest, Forbidden, RetryAfter, TimedOut
+
 import reliable_delivery as worker
 
 
 def subscriber(chat=1):
-    return dict(chat_id=chat, due_at=datetime(2026,1,1,tzinfo=timezone.utc),
-                level='B1',learning_language='en',explanation_language='ar',
-                ui_language='ar',settings_updated_at=None)
+    return {'chat_id': chat, 'due_at': datetime(2026,1,1,tzinfo=UTC),
+                'level': 'B1','learning_language': 'en','explanation_language': 'ar',
+                'ui_language': 'ar','settings_updated_at': None}
 
 
 def content():
-    return dict(id=1,telegram_file_id='reusable-file',phrase='Good for you',topic='social',
-                level='B1',learning_language='en',video_title='Movie',source_url='https://example.com',clip_id='1')
+    return {'id': 1,'telegram_file_id': 'reusable-file','phrase': 'Good for you','topic': 'social',
+                'level': 'B1','learning_language': 'en','video_title': 'Movie','source_url': 'https://example.com','clip_id': '1'}
 
 
 def fixture(monkeypatch):
@@ -122,7 +123,7 @@ def test_ledger_write_failure_does_not_retry_telegram(monkeypatch):
 
 def test_failed_send_waits_until_retry_time(monkeypatch):
     bot=fixture(monkeypatch)
-    monkeypatch.setattr(worker.store,'state',lambda _:{'status':'failed','attempts':1,'retry_at':datetime.now(timezone.utc)+timedelta(hours=1),'content_id':1})
+    monkeypatch.setattr(worker.store,'state',lambda _:{'status':'failed','attempts':1,'retry_at':datetime.now(UTC)+timedelta(hours=1),'content_id':1})
     assert run(bot).skipped==1
     bot.send_video.assert_not_called()
 
@@ -193,3 +194,20 @@ def test_shared_queue_splits_mixed_audience_without_new_generation(monkeypatch):
     select.assert_not_called()
     explain.assert_not_called()
     assert [c.args[1] for c in worker.store.claim.call_args_list] == [1,2]
+
+
+def test_invalid_file_stops_cohort_and_preserves_schedule_for_safe_retry(monkeypatch):
+    bot=fixture(monkeypatch)
+    bot.send_video.side_effect=BadRequest('Wrong file identifier')
+    stats=run(bot,[subscriber(1),subscriber(2)])
+    assert stats.failed==1 and stats.skipped==1
+    assert bot.send_video.call_count==1
+    worker.db.advance_due_after_delivery.assert_not_called()
+
+
+def test_legacy_summary_failure_does_not_abort_next_group(monkeypatch):
+    bot=fixture(monkeypatch)
+    worker.db.mark_phrase_sent.side_effect=RuntimeError('summary unavailable')
+    users=[subscriber(1),dict(subscriber(2),level='B2')]
+    assert run(bot,users).sent==2
+    assert bot.send_video.call_count==2

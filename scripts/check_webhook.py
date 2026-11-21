@@ -1,9 +1,11 @@
 """Inspect/restore the existing Vercel webhook without exposing credentials."""
 import os
-import requests
 import sys
 import time
 from pathlib import Path
+
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from webhook_auth import webhook_secret
 
@@ -22,7 +24,7 @@ def main():
             if not r.ok or not data.get('ok'):
                 raise ValueError()
             return data['result']
-        except Exception:
+        except Exception:  # noqa: BLE001 - normalize any failed Telegram API probe
             raise RuntimeError(f'Telegram {method} failed') from None
 
     info = api('getWebhookInfo')
@@ -38,14 +40,14 @@ def main():
         print(f'::notice title=Webhook endpoint::empty_update_http={response.status_code}', flush=True)
         if response.status_code != 200:
             raise ValueError()
-    except Exception:
+    except Exception:  # noqa: BLE001 - fail closed on any probe network or response error
         raise RuntimeError('Production webhook endpoint failed safe empty-update probe') from None
     if os.environ.get('VERIFY_AUTH') == 'true':
         try:
             denied = requests.post(EXPECTED, json={}, timeout=30)
             if denied.status_code != 403:
                 raise ValueError()
-        except Exception:
+        except Exception:  # noqa: BLE001 - fail closed if any auth probe or response parsing fails
             raise RuntimeError('Webhook did not reject an unauthenticated update') from None
         print('::notice title=Webhook authentication::Unauthenticated update rejected', flush=True)
     if os.environ.get('REPAIR_WEBHOOK') == 'true':

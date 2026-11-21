@@ -95,3 +95,16 @@ test('shared library assigns oldest unseen lesson per person, not per interval c
   result=await db.query(query,[[2],'B1','en']);assert.equal(result.rows[0].id,null);
  }finally{await db.close();}
 });
+
+test('admin throttling SQL locks after twenty guesses and expires safely',async()=>{
+ const db=new PGlite();
+ try{
+  await db.exec(read('schema.sql'));
+  const query=read('lib/admin-rate-limit.js').match(/client.query\(`(INSERT INTO admin_login_limits[\s\S]*?)`, \[key\]\)/)[1];
+  for(let n=1;n<=21;n++) assert.equal((await db.query(query,['salted-test-key'])).rows[0].allowed,n<=20);
+  await db.exec("UPDATE admin_login_limits SET expires_at=now()-interval '1 second'");
+  assert.equal((await db.query(query,['salted-test-key'])).rows[0].allowed,true);
+  assert.equal((await db.query('SELECT attempts FROM admin_login_limits')).rows[0].attempts,1);
+  assert.equal((await db.query(query,['different-key'])).rows[0].allowed,true);
+ }finally{await db.close();}
+});

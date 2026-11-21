@@ -1,4 +1,5 @@
 import pytest
+
 from bot_identity import database_schema
 
 
