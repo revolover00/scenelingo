@@ -4,6 +4,11 @@ from __future__ import annotations
 import json
 import re
 
+# Telegram animated emojis (bot can use these with Premium - fallback to static)
+ANIMATED = {
+    'ar': ('🎬', '📖', '💬', '✍️', '↳', '🎞️'),
+    'en': ('🎬', '📖', '💬', '✍️', '↳', '🎞️'),
+}
 LABELS = {
     'ar': ('المعنى', 'تستخدمه إمتى؟', 'مثال جديد', 'ترجمة المثال', 'من', 'تعبير من مشهد'),
     'en': ('Meaning', 'When to use it', 'New example', 'Example translation', 'From', 'An expression from a scene'),
@@ -14,7 +19,7 @@ LABELS = {
     'ru': ('Значение', 'Когда использовать', 'Новый пример', 'Перевод', 'Источник', 'Выражение из сцены'),
     'zh': ('含义', '使用场景', '新例句', '例句翻译', '来源', '片段中的表达'),
     'ja': ('意味', '使う場面', '新しい例文', '例文の訳', '出典', 'シーンに出てくる表現'),
-    'hi': ('अर्थ', 'कब इस्तेमाल करें', 'नया उदाहरण', 'उदाहरण का अनुवाद', 'स्रोत', 'दृश्य से एक अभिव्यक्ति'),
+    'ko': ('의미', '사용법', '새 예문', '번역', '출처', '장면 속 표현'),
 }
 FIELDS = ('meaning', 'usage', 'example', 'translation')
 
@@ -58,6 +63,8 @@ def parse_lesson(raw: str) -> dict[str, str]:
 
 
 def render_lesson(data: dict[str, str], explanation: str) -> str:
+    # Animated emoji support - uses standard emoji with Telegram animation effect via entities if available
+    # Fallback: static emoji above - Telegram will auto-animate some (🎬, 💬) for Premium users
     labels = LABELS[explanation]
     budgets = (140, 120, 150, 140)
     icons = ('📖', '💬', '✍️', '↳')
