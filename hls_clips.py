@@ -8,8 +8,8 @@ import tempfile
 from pathlib import Path
 from urllib.error import URLError
 
-from preferences import validate_language
 from media_tools import ffmpeg_executable
+from preferences import validate_language
 
 MAX_FILES = 30
 MAX_PLAYLIST = 100_000
@@ -102,7 +102,7 @@ def download_localized(slug: str, language: str, path: Path) -> bool:
                 '-protocol_whitelist', 'file', '-i', str(tmp / 'video-lq.m3u8'),
                 '-protocol_whitelist', 'file', '-i', str(tmp / f'audio-{language}.m3u8'),
                 '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', '-movflags', '+faststart', str(path),
-            ], capture_output=True, timeout=60)
+            ], check=False, capture_output=True, timeout=60)
             if result.returncode or not path.is_file() or not 1024 <= path.stat().st_size <= MAX_BYTES:
                 path.unlink(missing_ok=True)
                 return False

@@ -4,18 +4,26 @@ Telegram has no sendVideo idempotency key: a timeout is ambiguous, not retryable
 This favors avoiding duplicate replays over silently claiming exactly-once delivery.
 """
 from __future__ import annotations
+
 import asyncio
-from collections import defaultdict
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
 import logging
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import RetryAfter, Forbidden, NetworkError, BadRequest, TelegramError
+from telegram.error import (
+    BadRequest,
+    Forbidden,
+    NetworkError,
+    RetryAfter,
+    TelegramError,
+)
 
 import db
 import delivery_store as store
+from async_file import open_binary_async
 from config import config
 
 log = logging.getLogger(__name__)
@@ -95,7 +103,7 @@ async def run(subscribers, bot, select, explain, reload_clip, stats=None, prepar
                 db.advance_due_after_delivery(sub['chat_id'], sub['settings_updated_at'])
                 stats.skipped += 1
                 continue
-            if previous['retry_at'] and previous['retry_at'] > datetime.now(timezone.utc):
+            if previous['retry_at'] and previous['retry_at'] > datetime.now(UTC):
                 stats.skipped += 1
                 continue
         # Retrying an explicitly refused send must use its original lesson.
@@ -110,6 +118,7 @@ async def run(subscribers, bot, select, explain, reload_clip, stats=None, prepar
             continue
         sent_before = stats.sent
         local_clip = None
+        stage = 'lookup'
         try:
             content = store.get_content(pinned) if pinned else store.cached(level, learning, [s['chat_id'] for s in audience])
             if content:
@@ -117,22 +126,29 @@ async def run(subscribers, bot, select, explain, reload_clip, stats=None, prepar
                     stats.cache_hits += 1
                 else:
                     stats.content_requests += 1
+                    stage = 'restore_saved_media'
                     local_clip = reload_clip(content)
             else:
                 stats.content_requests += 1
+                stage = 'select_new_clip'
                 expression, local_clip = select(level, learning)
                 content = store.content(expression, local_clip, level, learning)
+                stage = 'check_unseen'
                 if store.seen_by(content['id'], [s['chat_id'] for s in audience]):
                     raise RuntimeError('No unseen verified content for this audience')
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - isolate external content-provider failures per group
             # Store only a classified outcome; never leak source URLs or secrets.
-            log.warning('Content unavailable for %s/%s (%s)', level, learning, type(error).__name__)
+            log.warning('Content unavailable for %s/%s at %s (%s)', level, learning, stage, type(error).__name__)
             stats.failed += len(audience)
             continue
+        invalid_cached = False
         explanations = defaultdict(list)
         for sub in audience:
             explanations[sub['explanation_language']].append(sub)
         for language, recipients in explanations.items():
+            if invalid_cached:
+                stats.skipped += len(recipients)
+                continue
             eligible = [s for s in recipients if db.still_due_with_settings(s)]
             stats.skipped += len(recipients) - len(eligible)
             recipients = eligible
@@ -146,11 +162,11 @@ async def run(subscribers, bot, select, explain, reload_clip, stats=None, prepar
                     stats.explanation_requests += 1
                     caption = explain(content['phrase'], SimpleNamespace(title=content['video_title'], url=content['source_url']), level, learning, language)
                     store.save_caption(content['id'], language, caption)
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - mark provider failures for this explanation group
                 log.warning('Explanation unavailable (%s)', type(error).__name__)
                 stats.failed += len(recipients)
                 continue
-            for sub in recipients:
+            for recipient_index, sub in enumerate(recipients):
                 if not db.still_due_with_settings(sub):
                     stats.skipped += 1
                     continue
@@ -162,11 +178,11 @@ async def run(subscribers, bot, select, explain, reload_clip, stats=None, prepar
                     if content['telegram_file_id']:
                         outcome, code, message = await send_video(bot, sub['chat_id'], content['telegram_file_id'], caption, keyboard(content['id'], sub.get('ui_language', 'ar')))
                     else:
-                        with open(local_clip.path, 'rb') as video:
+                        async with open_binary_async(local_clip.path) as video:
                             outcome, code, message = await send_video(bot, sub['chat_id'], video, caption, keyboard(content['id'], sub.get('ui_language', 'ar')))
                 except OSError:
                     outcome, code, message = 'failed', 'local_media_unavailable', None
-                except Exception:
+                except Exception:  # noqa: BLE001 - preserve the durable uncertain-send state for any failure
                     # An unclassified error after starting an upload is ambiguous.
                     store.finish(attempt_id, 'uncertain', 'unclassified_send_error')
                     stats.uncertain += 1
@@ -191,13 +207,20 @@ async def run(subscribers, bot, select, explain, reload_clip, stats=None, prepar
                     stats.failed += 1
                     if code == 'cached_media_invalid':
                         store.file_id(content['id'], None)
-                        # Keep the rejected reference in this cohort: subsequent
-                        # recipients get an explicit refusal, never an ambiguous
-                        # attempt to open a missing local clip. Next run reloads it.
-                    if code != 'rate_limited':
+                        invalid_cached = True
+                        # Explicit rejection is safe to retry after reloading the
+                        # original verified lesson. Never send a known-invalid ID
+                        # to the remaining recipients in this cohort.
+                        stats.skipped += len(recipients) - recipient_index - 1
+                        break
+                    if code not in ('rate_limited', 'cached_media_invalid'):
                         db.advance_due_after_delivery(sub['chat_id'], sub['settings_updated_at'])
                 await asyncio.sleep(config.send_delay)
         # History is best effort, and never controls slot deduplication.
         if stats.sent > sent_before:
-            db.mark_phrase_sent(level, content['phrase'], content['topic'], content['clip_id'], content['video_title'], learning)
+            try:
+                db.mark_phrase_sent(level, content['phrase'], content['topic'], content['clip_id'], content['video_title'], learning)
+            except Exception:
+                # The durable receipt already controls replay prevention/history.
+                log.warning('Legacy phrase summary unavailable; delivery receipt retained')
     return stats

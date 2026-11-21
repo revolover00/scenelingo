@@ -72,3 +72,10 @@ CREATE TABLE IF NOT EXISTS delivery_runs (
     due_count INTEGER NOT NULL CHECK (due_count >= 0),
     finished_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Distributed admin login throttling; only salted IP hashes, never credentials.
+CREATE TABLE IF NOT EXISTS admin_login_limits (
+    key_hash TEXT PRIMARY KEY,
+    attempts INTEGER NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);

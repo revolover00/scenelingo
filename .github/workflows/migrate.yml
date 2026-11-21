@@ -1,0 +1,28 @@
+name: Database migrations
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['schema.sql', 'scheduling.sql', 'reliability.sql']
+concurrency:
+  group: database-migrations
+  cancel-in-progress: false
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Apply additive database migrations
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -c 'import db; db.init_db()'
+      - name: Verify real database session isolation and lock release
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/run_daily_with_diagnostics.py scripts/check_database_sessions.py

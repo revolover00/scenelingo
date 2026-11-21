@@ -40,6 +40,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Verify required delivery capabilities
+        run: python release_contract.py
+
       - name: Install Python dependencies and bundled FFmpeg
         run: pip install -r requirements.txt
 
@@ -48,7 +51,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           SEND_NOW: ${{ github.event_name == 'workflow_dispatch' && inputs.send_now }}
-        run: python scripts/prepare_delivery.py
+        run: python scripts/run_daily_with_diagnostics.py scripts/prepare_delivery.py
 
       - name: Run daily job
         env:
@@ -58,9 +61,42 @@ jobs:
           GROQ_MODEL: qwen/qwen3.8-27b
         run: python scripts/run_daily_with_diagnostics.py
 
+      - name: Refill verified lesson reserve without sending
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: qwen/qwen3.8-27b
+        run: python scripts/run_daily_with_diagnostics.py scripts/refill_reserve.py
+
       - name: Check webhook health
         if: always()
         env:
           VERIFY_AUTH: 'true'
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: python scripts/check_webhook.py
+
+      - name: Check overdue delivery health
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: python scripts/run_daily_with_diagnostics.py scripts/check_delivery_health.py
+
+  alert:
+    # Branch validation/manual probes must not open or close production incidents.
+    if: ${{ always() && github.ref == 'refs/heads/main' && needs.send.result != 'skipped' }}
+    needs: send
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update delivery incident
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DELIVERY_RESULT: ${{ needs.send.result }}
+          DELIVERY_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 scripts/delivery_alert.py

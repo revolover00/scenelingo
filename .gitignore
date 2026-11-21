@@ -20,3 +20,11 @@ clips/
 
 # Node
 node_modules/
+
+# Local deployment credentials and environment variants
+.tgcloud/
+.env.*
+!.env.example
+
+# Local investigation artifacts
+.cache/

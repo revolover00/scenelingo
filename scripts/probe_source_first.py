@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import clip_cafe
 import multilingual
@@ -20,6 +21,6 @@ with TemporaryDirectory() as tmp, \
         meaning = multilingual.meaning(text, language, 'ar', 'A2')
         assert clip.path.is_file() and meaning
         print(f'::notice title=Source-first {language}::Verified A2 expression and explanation from {clip.clip_id}', flush=True)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - operator probe reports any source or provider failure
         print(f'::error title=Source-first {language} unavailable::{type(exc).__name__}', flush=True)
         raise SystemExit(1)

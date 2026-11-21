@@ -4,6 +4,14 @@ from unittest.mock import AsyncMock
 
 import daily_job
 import phrases
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def no_live_source_requests(monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("test source unavailable")
+    monkeypatch.setattr(daily_job.source_first, "find_expression_clip", unavailable)
 
 
 def test_levels_have_multiple_topics_and_full_expressions():
@@ -53,8 +61,8 @@ def test_failed_delivery_does_not_mark_expression(monkeypatch):
 
 def test_only_due_users_are_sent_and_advanced(monkeypatch):
     sent, advanced, marked = [], [], []
-    users = [dict(chat_id=12, level='A2', learning_language='en', explanation_language='ar', settings_updated_at='v1'),
-             dict(chat_id=13, level='A2', learning_language='en', explanation_language='ar', settings_updated_at=None)]
+    users = [{'chat_id': 12, 'level': 'A2', 'learning_language': 'en', 'explanation_language': 'ar', 'settings_updated_at': 'v1'},
+             {'chat_id': 13, 'level': 'A2', 'learning_language': 'en', 'explanation_language': 'ar', 'settings_updated_at': None}]
     monkeypatch.setattr(daily_job, 'Bot', lambda **kwargs: object())
     monkeypatch.setattr(daily_job, 'select_localized_clip', lambda level, learning: (
         phrases.BANK[level][0], SimpleNamespace(path='/clip', clip_id='id', title='Movie')))
@@ -81,7 +89,7 @@ def test_unverified_clip_fails_without_sending(monkeypatch):
     monkeypatch.setattr(daily_job, 'select_localized_clip', lambda *args: (_ for _ in ()).throw(RuntimeError('No verified clip')))
     monkeypatch.setattr(daily_job, 'broadcast', send)
     with pytest.raises(RuntimeError):
-        asyncio.run(daily_job.run_due_subscribers([dict(chat_id=1, level='A2', learning_language='ja', explanation_language='ar', settings_updated_at=None)]))
+        asyncio.run(daily_job.run_due_subscribers([{'chat_id': 1, 'level': 'A2', 'learning_language': 'ja', 'explanation_language': 'ar', 'settings_updated_at': None}]))
     send.assert_not_called()
 
 
@@ -93,14 +101,14 @@ def test_changed_settings_or_unsubscribe_prevents_delivery(monkeypatch):
     monkeypatch.setattr(daily_job.db, 'still_due_with_settings', lambda sub: False)
     send = AsyncMock()
     monkeypatch.setattr(daily_job, 'broadcast', send)
-    asyncio.run(daily_job.run_due_subscribers([dict(chat_id=1, level='A2', learning_language='en', explanation_language='ar', settings_updated_at=None)]))
+    asyncio.run(daily_job.run_due_subscribers([{'chat_id': 1, 'level': 'A2', 'learning_language': 'en', 'explanation_language': 'ar', 'settings_updated_at': None}]))
     send.assert_not_called()
 
 
 def test_localized_build_passes_correct_verifier_and_language(monkeypatch, tmp_path):
-    from preferences import LANGUAGES
-    import multilingual
     import clip_cafe
+    import multilingual
+    from preferences import LANGUAGES
     path = tmp_path / 'sample.mp4'
     path.write_bytes(b'fake')
     checked = []
@@ -116,15 +124,15 @@ def test_localized_build_passes_correct_verifier_and_language(monkeypatch, tmp_p
     monkeypatch.setattr(clip_cafe, 'find_clip', find)
     for entry in LANGUAGES:
         lang = entry['code']
-        phrase, clip, caption = daily_job.build_localized_message('A2', lang, 'ar')
+        phrase, _clip, caption = daily_job.build_localized_message('A2', lang, 'ar')
         assert phrase.text in caption
         assert f'{lang}/ar/A2' in caption
         assert checked[-1][2] == lang
 
 
 def test_exhausted_english_bank_tries_new_generated_expressions(monkeypatch, tmp_path):
-    import multilingual
     import clip_cafe
+    import multilingual
     seen = {p.text.casefold() for p in phrases.BANK['A2']}
     monkeypatch.setattr(daily_job.db, 'phrase_history', lambda *args: (seen, []))
     monkeypatch.setattr(multilingual, 'expressions', lambda *args: [('A fresh sentence', 'new topic')])
@@ -150,7 +158,7 @@ def test_source_first_build_uses_verified_selected_expression(monkeypatch):
 
 
 def test_same_learning_group_reuses_clip_across_explanation_languages(monkeypatch):
-    users = [dict(chat_id=i, level='A2', learning_language='ja', explanation_language=exp, settings_updated_at=None)
+    users = [{'chat_id': i, 'level': 'A2', 'learning_language': 'ja', 'explanation_language': exp, 'settings_updated_at': None}
              for i, exp in [(1, 'ar'), (2, 'en')]]
     clip = SimpleNamespace(path='/clip', clip_id='id', title='Movie')
     selected, captions, marked = [], [], []
@@ -168,7 +176,7 @@ def test_same_learning_group_reuses_clip_across_explanation_languages(monkeypatc
 
 def test_failed_explanation_does_not_block_other_languages(monkeypatch):
     import pytest
-    users = [dict(chat_id=i, level='A2', learning_language='ja', explanation_language=exp, settings_updated_at=None)
+    users = [{'chat_id': i, 'level': 'A2', 'learning_language': 'ja', 'explanation_language': exp, 'settings_updated_at': None}
              for i, exp in [(1, 'ar'), (2, 'en')]]
     clip = SimpleNamespace(path='/clip', clip_id='id', title='Movie')
     sent, marked = [], []
@@ -189,3 +197,49 @@ def test_failed_explanation_does_not_block_other_languages(monkeypatch):
     with pytest.raises(RuntimeError):
         asyncio.run(daily_job.run_due_subscribers(users))
     assert sent == [2] and len(marked) == 1
+
+
+def test_reloading_saved_lesson_cannot_substitute_another_movie(monkeypatch):
+    import pytest
+    lesson={'phrase':'Good for you','learning_language':'en','clip_id':'original','source_url':'https://clip.cafe/original/'}
+    monkeypatch.setattr(daily_job.clip_cafe,'load_clip',lambda *args,**kwargs:SimpleNamespace(clip_id='different'))
+    with pytest.raises(RuntimeError,match='source substitution'):
+        daily_job.reload_verified_clip(lesson)
+    original=SimpleNamespace(clip_id='original')
+    monkeypatch.setattr(daily_job.clip_cafe,'load_clip',lambda *args,**kwargs:original)
+    assert daily_job.reload_verified_clip(lesson) is original
+
+
+def test_unavailable_unseen_english_bank_refreshes_without_recycling(monkeypatch):
+    monkeypatch.setattr(daily_job.db, 'phrase_history', lambda *args: (set(), []))
+    monkeypatch.setattr(phrases, 'candidates', lambda *args: [phrases.Phrase('Unavailable phrase', 'work')])
+    generated = []
+    def refresh(language, level, excluded, topics):
+        generated.append((language, level, excluded))
+        return [('Unavailable phrase', 'work'), ('A fresh expression', 'discussion')]
+    monkeypatch.setattr(daily_job.multilingual, 'expressions', refresh)
+    queries = []
+    clip = SimpleNamespace(clip_id='verified')
+    def find(text, **kwargs):
+        queries.append(text)
+        assert kwargs['audio_language'] == 'en' and callable(kwargs['verify'])
+        if text == 'Unavailable phrase':
+            raise RuntimeError('no matching audio')
+        return clip
+    monkeypatch.setattr(daily_job.clip_cafe, 'find_clip', find)
+    expression, found = daily_job.select_localized_clip('C1', 'en')
+    assert expression.text == 'A fresh expression' and found is clip
+    assert queries == ['Unavailable phrase', 'A fresh expression']
+    assert generated == [('en', 'C1', {'unavailable phrase'})]
+
+
+def test_fresh_search_failure_never_accepts_unverified_audio(monkeypatch):
+    import pytest
+    monkeypatch.setattr(daily_job.db, 'phrase_history', lambda *args: (set(), []))
+    monkeypatch.setattr(phrases, 'candidates', lambda *args: [])
+    monkeypatch.setattr(daily_job.multilingual, 'expressions', lambda *args: [('Fresh but wrong audio', 'work')])
+    def reject(*args, **kwargs):
+        raise RuntimeError('audio mismatch')
+    monkeypatch.setattr(daily_job.clip_cafe, 'find_clip', reject)
+    with pytest.raises(RuntimeError, match='No verified clip'):
+        daily_job.select_localized_clip('C1', 'en')

@@ -6,17 +6,16 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse, urlencode
-from urllib.request import Request, urlopen
 from urllib.error import URLError
-
+from urllib.parse import urlencode, urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 log = logging.getLogger(__name__)
 BASE = 'https://yarn.co'
 HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; MovieWordBot/1.0)'}
-CLIP_ID = re.compile(r'/yarn-clip/([0-9a-f-]{36})(?:["\'/#?]|$)', re.I)
-MP4_URL = re.compile(r'https://[^\s"\'<>\\]+\.mp4(?:\?[^\s"\'<>\\]*)?', re.I)
-TITLE = re.compile(r'<title[^>]*>(.*?)</title>', re.I | re.S)
+CLIP_ID = re.compile(r'/yarn-clip/([0-9a-f-]{36})(?:["\'/#?]|$)', re.IGNORECASE)
+MP4_URL = re.compile(r'https://[^\s"\'<>\\]+\.mp4(?:\?[^\s"\'<>\\]*)?', re.IGNORECASE)
+TITLE = re.compile(r'<title[^>]*>(.*?)</title>', re.IGNORECASE | re.DOTALL)
 MAX_BYTES = 20 * 1024 * 1024
 
 @dataclass(frozen=True)
@@ -28,8 +27,38 @@ class YarnClip:
     path: Path
 
 
+def _validate_yarn_url(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.hostname or ''
+    try:
+        port = parsed.port
+    except ValueError:
+        port = -1
+
+    if (
+        parsed.scheme != 'https'
+        or not (host == 'yarn.co' or host.endswith('.yarn.co'))
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError(f'Refusing to fetch unexpected URL: {url!r}')
+    return url
+
+
+class _YarnRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = _validate_yarn_url(urljoin(req.full_url, newurl))
+        return super().redirect_request(req, fp, code, msg, headers, target)
+
+
+_YARN_OPENER = build_opener(_YarnRedirectHandler)
+
+
 def _get(url: str):
-    return urlopen(Request(url, headers=HEADERS), timeout=30)
+    # The URL and every HTTP redirect stay on Yarn's HTTPS origin/subdomains.
+    # This also allows its media CDN hosts, which the caller validates too.
+    return _YARN_OPENER.open(Request(_validate_yarn_url(url), headers=HEADERS), timeout=30)
 
 
 def _get_text(url: str) -> str:
@@ -45,7 +74,7 @@ def _parse_title(page: str, word: str) -> tuple[str, str] | None:
     if len(parts) < 4 or parts[0].upper() != 'YARN':
         return None
     quote, title = parts[1:3]
-    if not re.search(rf'(?<!\w){re.escape(word)}(?!\w)', quote, re.I):
+    if not re.search(rf'(?<!\w){re.escape(word)}(?!\w)', quote, re.IGNORECASE):
         return None
     return quote, title
 

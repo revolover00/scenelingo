@@ -86,3 +86,13 @@ CREATE TABLE IF NOT EXISTS preparation_runs (
     duration_seconds DOUBLE PRECISION NOT NULL,
     finished_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+-- Movie-audio transcripts only; no user messages, bot tokens or AI credentials.
+CREATE TABLE IF NOT EXISTS audio_transcripts (
+    audio_hash TEXT PRIMARY KEY,
+    detected_language TEXT NOT NULL,
+    transcript TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT now()+interval '7 days',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -1,5 +1,5 @@
-from pathlib import Path
 import re
+from pathlib import Path
 
 from scripts.bot_profile import COMMANDS, PROFILES, configure_profile
 

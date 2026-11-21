@@ -3,6 +3,7 @@ import subprocess
 from types import SimpleNamespace
 
 import pytest
+
 import hls_clips
 
 
@@ -48,6 +49,7 @@ def test_missing_audio_track_never_builds_mp4(monkeypatch, tmp_path):
 
 def test_bundled_ffmpeg_muxes_localized_hls_without_system_tools(monkeypatch, tmp_path):
     import imageio_ffmpeg
+
     import media_tools
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     origin = tmp_path / 'origin'

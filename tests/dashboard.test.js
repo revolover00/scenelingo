@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { authorized } from '../lib/dashboard.js';
 import handler from '../api/dashboard.js';
+import pg from 'pg';
+process.env.BOT_TOKEN = '123:test';
+pg.Client.prototype.connect = async () => {};
+pg.Client.prototype.end = async () => {};
+pg.Client.prototype.query = async () => ({rows:[{allowed:true}]});
 const hash = createHash('sha256').update('test-password').digest('hex');
 const auth = 'Basic '+Buffer.from('admin:test-password').toString('base64');
 const oldHash = process.env.DASHBOARD_PASSWORD_HASH;
@@ -24,4 +29,24 @@ test('private dashboard serves HTML with no-store and restrictive CSP',async()=>
 });
 test('dashboard rejects write methods',async()=>{
  const res=response();await handler({method:'POST',headers:{authorization:auth}},res);assert.equal(res.code,405);
+});
+
+test('locked login cannot bypass throttling with a correct password',async()=>{
+ process.env.DASHBOARD_PASSWORD_HASH=hash;
+ const original=pg.Client.prototype.query;
+ try {
+  pg.Client.prototype.query=async()=>({rows:[{allowed:false}]});
+  const res=response();await handler({method:'GET',headers:{authorization:auth}},res);
+  assert.equal(res.code,429);assert.equal(res.headers['Retry-After'],'900');
+ } finally {pg.Client.prototype.query=original;}
+});
+
+test('login limiter database outage fails closed instead of skipping protection',async()=>{
+ process.env.DASHBOARD_PASSWORD_HASH=hash;
+ const original=pg.Client.prototype.query;
+ try {
+  pg.Client.prototype.query=async()=>{throw new Error('offline');};
+  const res=response();await handler({method:'GET',headers:{authorization:auth}},res);
+  assert.equal(res.code,503);
+ } finally {pg.Client.prototype.query=original;}
 });

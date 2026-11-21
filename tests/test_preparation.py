@@ -1,8 +1,9 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from test_reliable_delivery import content, fixture, subscriber
+
 import preparation as prep
-from test_reliable_delivery import subscriber, content, fixture, run
 import reliable_delivery as worker
 
 
@@ -116,8 +117,8 @@ def test_future_recipient_is_not_sent_even_when_ready(monkeypatch):
 
 
 def test_restore_cleans_temporary_file_and_avoids_download(monkeypatch):
-    from unittest.mock import MagicMock
     from pathlib import Path
+    from unittest.mock import MagicMock
     conn, cur = MagicMock(), MagicMock()
     conn.__enter__.return_value = conn
     conn.cursor.return_value.__enter__.return_value = cur
@@ -146,6 +147,7 @@ def test_restore_missing_media_uses_verified_fallback(monkeypatch):
 
 def test_buffer_budget_blocks_write(monkeypatch, tmp_path):
     from unittest.mock import MagicMock
+
     import pytest
     path = tmp_path/'clip.mp4'; path.write_bytes(b'abc')
     conn, cur = MagicMock(), MagicMock()
@@ -165,3 +167,24 @@ def test_settings_change_during_preparation_prevents_reservation(monkeypatch):
     assert prep.prepare([subscriber()], select, explain) == (0, 0)
     prep.reserve.assert_not_called()
     explain.assert_not_called()
+
+
+def test_media_read_is_bounded_even_if_file_grows_after_stat(monkeypatch):
+    import pytest
+    from unittest.mock import MagicMock
+    path=MagicMock()
+    path.stat.return_value.st_size=1
+    stream=path.open.return_value.__enter__.return_value
+    stream.read.return_value=b'x'*(prep.MAX_ITEM+1)
+    monkeypatch.setattr(prep,'Path',lambda _:path)
+    with pytest.raises(ValueError,match='grew'):
+        prep.save_media(1,'growing.mp4')
+    stream.read.assert_called_once_with(prep.MAX_ITEM+1)
+
+
+def test_preparation_consistently_uses_thirty_minute_horizon(monkeypatch):
+    setup(monkeypatch)
+    assert prep.LOOKAHEAD_MINUTES == 30
+    prep.prepare([subscriber()], Mock(), Mock())
+    assert prep.db.still_due_with_settings.call_count > 0
+    assert all(call.args[1] == 30 for call in prep.db.still_due_with_settings.call_args_list)

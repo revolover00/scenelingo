@@ -6,11 +6,14 @@ import random
 
 import clip_cafe
 import multilingual
+from ai_observability import tracked
 from preferences import validate_language
 
 # Seeds are search hints, not the expression sent to the learner. The actual
 # expression is extracted and checked against the detected audio transcript.
 SEEDS = {
+    'en': ('consequences', 'underestimate', 'perspective', 'circumstances',
+           'assumptions', 'compromise', 'inevitable', 'responsibility'),
     'es': ('gracias', 'hola', 'no lo sé', 'qué pasó'),
     'fr': ('merci', 'bonjour', 'je ne sais pas', 'ça va'),
     'pt': ('obrigado', 'olá', 'não sei', 'tudo bem'),
@@ -32,9 +35,10 @@ def extract_expression(transcript: str, language: str, level: str, seen: set[str
         'Copy it exactly, as a contiguous span. Do not invent, translate, paraphrase, or use a single word. '
         'Do not use a name, profanity or unrelated sound. If no suitable expression exists return null. '
         f'Prefer topics other than {", ".join(topics[:3])}. '
+        f'Do not select these previously used or reserved expressions: {sorted(seen)[-100:]!r}. '
         f'Transcript: {transcript[:3000]!r}\n'
         'Return JSON only: {"text": "...", "topic": "..."}, or {"text": null}.')
-    response = multilingual.client().chat.completions.create(
+    response = tracked('source_expression', multilingual.client().chat.completions.create,
         model=multilingual.config.groq_model, messages=[{'role': 'user', 'content': prompt}],
         temperature=0.1, max_tokens=250, response_format={'type': 'json_object'},
     )
@@ -62,14 +66,16 @@ def find_expression_clip(language: str, level: str, seen: set[str], topics: list
     # English subtitles can locate a scene even where the site's target-language
     # subtitle index is sparse (notably Hindi); audio is independently checked.
     seeds += [(seed, 'en') for seed in ('thank you', 'what happened', 'i dont know', 'lets go')]
+    if language == 'en':
+        seeds = [(seed, language) for seed in SEEDS['en']]
     random.shuffle(seeds)
     # Bound the search per run so one difficult language cannot stall all users.
     for seed, search_language in seeds[:2]:
         chosen = None
-        def verify(path, search):
+        def verify(path, search, current_search_language=search_language):
             nonlocal chosen
             transcript = multilingual.transcript_for_language(path, language)
-            if transcript is None or (search_language == language and not clip_cafe.matches(search, transcript)):
+            if transcript is None or (language != 'en' and current_search_language == language and not clip_cafe.matches(search, transcript)):
                 return False
             chosen = extract_expression(transcript, language, level, seen, topics)
             return chosen is not None

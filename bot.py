@@ -7,12 +7,14 @@ use a free-tier host or run it alongside the daily job.)
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 import db
+from async_file import open_binary_async
 from config import config
 
 logging.basicConfig(
@@ -56,10 +58,10 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text("⏳ بجهز كلمة النهاردة...")
     try:
-        clip_path, caption = build_today_message()
-        with open(clip_path, "rb") as f:
-            await update.message.reply_video(video=f, caption=caption)
-    except Exception as exc:  # noqa: BLE001 - user-facing fallback
+        clip_path, caption = await asyncio.to_thread(build_today_message)
+        async with open_binary_async(clip_path) as video:
+            await update.message.reply_video(video=video, caption=caption)
+    except Exception as exc:
         log.exception("today command failed")
         await update.message.reply_text(f"حصلت مشكلة، حاول تاني بعد شوية. ({exc})")
 

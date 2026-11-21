@@ -7,7 +7,7 @@ from collections import deque
 from urllib.parse import urlsplit
 
 process = subprocess.Popen(
-    [sys.executable, "daily_job.py"], stdout=subprocess.PIPE,
+    [sys.executable, sys.argv[1] if len(sys.argv) > 1 else "daily_job.py"], stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1,
 )
 tail = deque(maxlen=25)

@@ -43,7 +43,7 @@ def parse_lesson(raw: str) -> dict[str, str]:
     except (ValueError, TypeError):
         raise ValueError('Model returned invalid lesson JSON') from None
     if not isinstance(data, dict):
-        raise ValueError('Lesson must be an object')
+        raise TypeError('Lesson must be an object')
     result = {}
     for key in FIELDS:
         value = data.get(key)

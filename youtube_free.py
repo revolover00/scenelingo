@@ -154,6 +154,7 @@ def _search_via_ytdlp(query: str, max_results: int) -> list[Video]:
             "--print", "%(id)s\t%(title)s\t%(channel)s",
             f"ytsearch{max_results}:{query}",
         ],
+        check=False,  # Partial search output is still useful; inspect returncode below.
         capture_output=True,
         text=True,
         timeout=60,

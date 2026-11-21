@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+
 import multilingual
 
 
@@ -59,3 +60,31 @@ def test_bundled_ffmpeg_can_identify_wrong_audio_without_ffprobe(monkeypatch, tm
         stderr='  Stream #0:1(eng): Audio: aac, 48000 Hz', stdout=''))
     assert not multilingual.likely_audio_language(tmp_path / 'clip.mp4', 'ja')
     assert multilingual.likely_audio_language(tmp_path / 'clip.mp4', 'en')
+
+
+def test_cached_transcript_skips_provider_and_still_checks_language(monkeypatch, tmp_path):
+    path = tmp_path / 'clip.mp4'; path.write_bytes(b'movie')
+    monkeypatch.setattr(multilingual, 'likely_audio_language', lambda *args: True)
+    monkeypatch.setattr(multilingual.audio_cache, 'get', lambda _: ('english', "Let's cut to the chase"))
+    fake = MagicMock()
+    monkeypatch.setattr(multilingual, 'client', lambda: fake)
+    assert multilingual.verify_audio(path, 'Let us cut to the chase', 'en')
+    assert not multilingual.verify_audio(path, 'Let us cut to the chase', 'fr')
+    assert not multilingual.verify_audio(path, 'Something entirely different', 'en')
+    fake.audio.transcriptions.create.assert_not_called()
+
+
+def test_successful_transcript_is_cached_but_provider_failure_is_not(monkeypatch, tmp_path):
+    path = tmp_path / 'clip.mp4'; path.write_bytes(b'movie')
+    monkeypatch.setattr(multilingual, 'likely_audio_language', lambda *args: True)
+    monkeypatch.setattr(multilingual.audio_cache, 'get', lambda _: None)
+    fake = MagicMock()
+    fake.audio.transcriptions.create.return_value = SimpleNamespace(language='english', text='Hello there')
+    monkeypatch.setattr(multilingual, 'client', lambda: fake)
+    save = MagicMock(); monkeypatch.setattr(multilingual.audio_cache, 'save', save)
+    assert multilingual.transcript_for_language(path, 'en') == 'Hello there'
+    save.assert_called_once()
+    save.reset_mock(); fake.audio.transcriptions.create.side_effect = RuntimeError('provider limit')
+    with pytest.raises(RuntimeError):
+        multilingual.transcript_for_language(path, 'en')
+    save.assert_not_called()

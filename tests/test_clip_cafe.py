@@ -35,8 +35,9 @@ def test_result_audio_languages_are_indexed():
 
 
 def test_search_includes_audio_and_transcript_language(monkeypatch, tmp_path):
+    from urllib.parse import parse_qs, urlparse
+
     import clip_cafe
-    from urllib.parse import urlparse, parse_qs
     urls = []
     def search(url):
         urls.append(url)
@@ -50,8 +51,9 @@ def test_search_includes_audio_and_transcript_language(monkeypatch, tmp_path):
 
 
 def test_search_falls_back_without_duplicate_clips(monkeypatch):
-    import clip_cafe
     from urllib.parse import parse_qs, urlparse
+
+    import clip_cafe
     calls = []
     def search(url):
         calls.append(parse_qs(urlparse(url).query))
@@ -65,8 +67,9 @@ def test_search_falls_back_without_duplicate_clips(monkeypatch):
 
 
 def test_search_language_can_differ_from_audio(monkeypatch):
-    import clip_cafe
     from urllib.parse import parse_qs, urlparse
+
+    import clip_cafe
     urls = []
     def search(url):
         urls.append(url)
@@ -78,8 +81,9 @@ def test_search_language_can_differ_from_audio(monkeypatch):
 
 
 def test_clip_search_stops_after_time_budget(monkeypatch, tmp_path):
-    import clip_cafe
     import pytest
+
+    import clip_cafe
     ticks = iter([100, 146])
     monkeypatch.setattr(clip_cafe.time, 'monotonic', lambda: next(ticks))
     monkeypatch.setattr(clip_cafe, 'search_links', lambda *args: iter(['movie/a/']))
@@ -90,8 +94,10 @@ def test_clip_search_stops_after_time_budget(monkeypatch, tmp_path):
 
 def test_redirect_policy_rejects_untrusted_destinations():
     from urllib.request import Request
-    from clip_cafe import SafeRedirect
+
     import pytest
+
+    from clip_cafe import SafeRedirect
     req = Request('https://clip.cafe/a')
     for url in ('https://evil.example/', 'http://127.0.0.1/', 'https://clip.cafe:444/a', 'https://u@clip.cafe/a'):
         assert not allowed(url)
@@ -111,3 +117,46 @@ def test_bounded_search_samples_beyond_top_results(monkeypatch):
     monkeypatch.setattr(clip_cafe, 'page', lambda url: p)
     monkeypatch.setattr(clip_cafe.random, 'sample', lambda population, k: population[-k:])
     assert list(clip_cafe.search_links('hi', None, limit=6)) == ['0', '1', '2', '17', '18', '19']
+
+
+def test_unambiguous_english_contractions_match_without_fuzzy_words():
+    import clip_cafe
+    for formal, spoken in [
+        ('Let us cut to the chase', "Let's cut to the chase."),
+        ('You are jumping to conclusions', 'You’re jumping to conclusions!'),
+        ('There is no point in arguing', "There's no point in arguing."),
+        ('That is beside the point', "That's beside the point."),
+        ('It is a blessing in disguise', "It's a blessing in disguise."),
+        ('Do not beat around the bush', "Don't beat around the bush."),
+        ('I will take your word for it', "I'll take your word for it."),
+    ]:
+        assert clip_cafe.matches(formal, spoken)
+    assert not clip_cafe.matches('I can do it', "I can't do it")
+    assert not clip_cafe.matches('He had left', "He'd left")
+    assert not clip_cafe.matches('There is no point in arguing', "There's no reason for arguing")
+
+
+def test_saved_scene_is_loaded_directly_with_identity_and_audio_checks(monkeypatch, tmp_path):
+    from io import BytesIO
+    from types import SimpleNamespace
+    import clip_cafe
+    import hls_clips
+    parser = PageParser()
+    parser.meta = {'og:description': 'An exact phrase', 'og:title': 'Scene | Film',
+                   'og:video': 'https://clip.cafe/videos/original.mp4'}
+    monkeypatch.setattr(clip_cafe, 'page', lambda url: parser)
+    monkeypatch.setattr(clip_cafe, 'search_links', lambda *args: (_ for _ in ()).throw(AssertionError('must not search')))
+    monkeypatch.setattr(hls_clips, 'download_localized', lambda *args: False)
+    def download(url):
+        stream = BytesIO(b'\0\0\0\x18ftyp' + b'0'*2000)
+        stream.url = url
+        return stream
+    monkeypatch.setattr(clip_cafe, 'get', download)
+    checked = []
+    clip = clip_cafe.load_clip('https://clip.cafe/source/', 'An exact phrase', tmp_path,
+        expected_id='original', audio_language='en', verify=lambda path, text: checked.append(text) or True)
+    assert clip.clip_id == 'original' and checked == ['An exact phrase']
+    import pytest
+    with pytest.raises(ValueError):
+        clip_cafe.load_clip('https://clip.cafe/source/', 'An exact phrase', tmp_path,
+            expected_id='different', verify=lambda *args: pytest.fail('wrong scene'))

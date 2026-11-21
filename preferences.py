@@ -19,7 +19,7 @@ def validate_language(code: str) -> str:
 def validate_interval(value: str | int) -> int:
     """Accept whole minutes only; never round fractional values silently."""
     if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise ValueError('Interval must be a whole number of minutes')
+        raise TypeError('Interval must be a whole number of minutes')
     text = str(value).strip()
     if not text.isascii() or not text.isdecimal():
         raise ValueError('Interval must be a whole number of minutes')

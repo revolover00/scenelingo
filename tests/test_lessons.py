@@ -3,11 +3,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+
 import multilingual
 from lessons import LABELS, caption, compact, parse_lesson, render_lesson, units
 
-DATA = dict(meaning='مش قادر تكمّل أو تتحمّل أكتر.', usage='لما تكون مضغوط ومحتاج توضّح إنك وصلت لحدك.',
-            example="I can’t take it anymore. I need a break.", translation='مش قادر أتحمّل أكتر. محتاج أرتاح.')
+DATA = {'meaning': 'مش قادر تكمّل أو تتحمّل أكتر.', 'usage': 'لما تكون مضغوط ومحتاج توضّح إنك وصلت لحدك.',
+            'example': "I can’t take it anymore. I need a break.", 'translation': 'مش قادر أتحمّل أكتر. محتاج أرتاح.'}
 
 
 def test_structured_lesson_is_readable_and_example_is_labeled_new():
@@ -20,10 +21,15 @@ def test_structured_lesson_is_readable_and_example_is_labeled_new():
     assert units(result) <= 1024
 
 
-@pytest.mark.parametrize('raw', ['', 'not json', '[]', '{}', '{"meaning":42}', json.dumps({**DATA, 'usage': ''}), json.dumps({**DATA, 'example': 'x' * 2001})])
+@pytest.mark.parametrize('raw', ['', 'not json', '{}', '{"meaning":42}', json.dumps({**DATA, 'usage': ''}), json.dumps({**DATA, 'example': 'x' * 2001})])
 def test_malformed_lessons_fail_closed(raw):
     with pytest.raises(ValueError):
         parse_lesson(raw)
+
+
+def test_lesson_payload_must_be_an_object():
+    with pytest.raises(TypeError):
+        parse_lesson('[]')
 
 
 @pytest.mark.parametrize('language', list(LABELS))

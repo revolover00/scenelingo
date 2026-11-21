@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
 import pytest
+
 import ai_observability as usage
 import db
 

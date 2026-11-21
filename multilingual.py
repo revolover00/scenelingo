@@ -3,19 +3,20 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
-import shutil
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 from openai import OpenAI
 
+from ai_observability import tracked
+import audio_cache
 from clip_cafe import matches
 from config import config
-from preferences import LANGUAGES, validate_language
-from media_tools import ffmpeg_executable
 from lessons import parse_lesson, render_lesson
-from ai_observability import tracked
+from media_tools import ffmpeg_executable
+from preferences import LANGUAGES, validate_language
 
 log = logging.getLogger(__name__)
 NAMES = {item['code']: item['name'] for item in LANGUAGES}
@@ -48,7 +49,7 @@ def expressions(language: str, level: str, seen: set[str], recent_topics: list[s
     raw = json.loads(response.choices[0].message.content or '{}')
     items = raw.get('expressions', []) if isinstance(raw, dict) else []
     if not isinstance(items, list):
-        raise ValueError('Model did not return a list of expressions')
+        raise TypeError('Model did not return a list of expressions')
     result = []
     for item in items[:20]:
         if not isinstance(item, dict):
@@ -121,7 +122,7 @@ def likely_audio_language(path: Path, language: str) -> bool:
             # The bundled FFmpeg does not include ffprobe. Its inspection
             # output still reports stream language when one is present.
             result = subprocess.run([ffmpeg_executable(), '-hide_banner', '-i', str(path)],
-                                    capture_output=True, text=True, timeout=10)
+                                    check=False, capture_output=True, text=True, timeout=10)
             match = re.search(r'Stream #\d+:\d+\(([A-Za-z]{3})\).*?Audio:', result.stderr)
             tag = match.group(1).lower() if match else ''
         return not tag or tag == 'und' or tag in STREAM_LANGUAGES[language]
@@ -135,6 +136,11 @@ def transcript_for_language(path: Path, language: str) -> str | None:
     validate_language(language)
     if not likely_audio_language(path, language):
         return None
+    audio_hash = audio_cache.key(path)
+    cached = audio_cache.get(audio_hash)
+    if cached:
+        detected, text = cached
+        return text if detected in DETECTED_NAMES[language] and text.strip() else None
     with path.open('rb') as video:
         transcript = tracked('transcription', client().audio.transcriptions.create,
             model='whisper-large-v3-turbo', file=video,
@@ -142,6 +148,8 @@ def transcript_for_language(path: Path, language: str) -> str | None:
         )
     detected = (getattr(transcript, 'language', '') or '').casefold()
     text = getattr(transcript, 'text', '') or ''
+    if detected and text.strip():
+        audio_cache.save(audio_hash, detected, text)
     return text if detected in DETECTED_NAMES[language] and text.strip() else None
 
 

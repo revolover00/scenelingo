@@ -1,10 +1,8 @@
 // Telegram webhook: subscribe, change CEFR level, and see the latest expression.
 import pg from 'pg';
+import { postgresOptions } from '../lib/postgres-config.js';
 import { authorizedWebhook } from '../lib/webhook-auth.js';
 import { applyLessonAction, lessonAction } from '../lib/lesson-actions.js';
-import { readFileSync } from 'node:fs';
-const reliabilitySql = readFileSync(new URL('../reliability.sql', import.meta.url), 'utf8');
-const scheduleSql = readFileSync(new URL('../scheduling.sql', import.meta.url), 'utf8');
 import { text, intervalLabel, validInterval, intervalKeyboard, levelKeyboard, uiKeyboard, UI_LANGUAGES } from '../bot_ui.js';
 
 const { Client } = pg;
@@ -85,54 +83,16 @@ async function setupChoice(client, chatId, kind, value) {
 }
 
 async function withDb(fn) {
-  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  const client = new Client(postgresOptions(process.env.DATABASE_URL));
   await client.connect();
   try {
     const botId = (process.env.BOT_TOKEN || '').split(':')[0];
     if (!/^[0-9]+$/.test(botId)) throw new Error('A valid BOT_TOKEN is required');
     // Digits-only bot ID keeps this identifier safe and stable across token rotations.
     const schema = `bot_${botId}`;
-    await client.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+    // Schema changes belong to the setup/worker migration path, never a user request.
+    // A missing migration fails closed and Telegram can retry after initialization.
     await client.query(`SET search_path TO "${schema}"`);
-    await client.query(`CREATE TABLE IF NOT EXISTS subscribers (
-      chat_id BIGINT PRIMARY KEY, username TEXT, first_name TEXT,
-      subscribed_at TIMESTAMPTZ NOT NULL DEFAULT now(), is_active BOOLEAN NOT NULL DEFAULT TRUE
-    )`);
-    // Idempotent migration: preserves existing subscriptions and defaults them to A2.
-    await client.query("ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS level TEXT NOT NULL DEFAULT 'A2'");
-    await client.query(`CREATE TABLE IF NOT EXISTS sent_phrases (
-      id BIGSERIAL PRIMARY KEY, level TEXT NOT NULL, phrase TEXT NOT NULL, topic TEXT NOT NULL,
-      clip_id TEXT, video_title TEXT, sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`);
-    await client.query("ALTER TABLE sent_phrases ADD COLUMN IF NOT EXISTS learning_language TEXT NOT NULL DEFAULT 'en'");
-    await client.query(`CREATE TABLE IF NOT EXISTS subscriber_preferences (
-      chat_id BIGINT PRIMARY KEY REFERENCES subscribers(chat_id) ON DELETE CASCADE,
-      learning_language TEXT NOT NULL DEFAULT 'en' CHECK (learning_language IN ('en','zh','hi','es','fr','ar','pt','ru','de','ja')),
-      explanation_language TEXT NOT NULL DEFAULT 'ar' CHECK (explanation_language IN ('en','zh','hi','es','fr','ar','pt','ru','de','ja')),
-      interval_minutes INTEGER NOT NULL DEFAULT 180 CHECK (interval_minutes BETWEEN 30 AND 1440),
-      next_due_at TIMESTAMPTZ, input_state TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`);
-    await client.query('ALTER TABLE subscriber_preferences ADD COLUMN IF NOT EXISTS input_state TEXT');
-    await client.query("ALTER TABLE subscriber_preferences ADD COLUMN IF NOT EXISTS ui_language TEXT NOT NULL DEFAULT 'ar' CHECK (ui_language IN ('ar', 'en'))");
-    await client.query(`DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'subscriber_preferences'::regclass
-        AND conname = 'subscriber_preferences_interval_minutes_check'
-        AND pg_get_constraintdef(oid) NOT LIKE '%30%') THEN
-
--- Raise old short intervals while preserving the remaining preferences.
-ALTER TABLE subscriber_preferences DROP CONSTRAINT IF EXISTS subscriber_preferences_interval_minutes_check;
-UPDATE subscriber_preferences SET interval_minutes = 30,
-    next_due_at = GREATEST(next_due_at, now() + interval '30 minutes'), updated_at = now()
-    WHERE interval_minutes < 30;
-ALTER TABLE subscriber_preferences ADD CONSTRAINT subscriber_preferences_interval_minutes_check
-    CHECK (interval_minutes BETWEEN 30 AND 1440);
-      END IF;
-    END $$`);
-    await client.query(scheduleSql);
-    await client.query(`CREATE TABLE IF NOT EXISTS delivery_runs (
-      id BIGSERIAL PRIMARY KEY,status TEXT NOT NULL CHECK(status IN ('idle','completed','failed')),
-      due_count INTEGER NOT NULL,finished_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
-    await client.query(reliabilitySql);
     return await fn(client);
   } finally {
     await client.end();

@@ -14,24 +14,24 @@ COMMANDS = [
 ]
 PROFILES = {
     '': (
-        'Learn languages, one scene at a time. 🎬\n\n'
+        ('Learn languages, one scene at a time. 🎬\n\n'
         'Discover real expressions through short movie scenes, with explanations for your level. '
         'Choose your learning language, explanation language and message frequency. '
-        'Save expressions and practise with /review.\n\nTap /start to get started.',
+        'Save expressions and practise with /review.\n\nTap /start to get started.'),
         'SceneLingo 🎬 Real expressions. Movie scenes. Learn at your own pace.',
     ),
     'en': (
-        'Learn languages, one scene at a time. 🎬\n\n'
+        ('Learn languages, one scene at a time. 🎬\n\n'
         'Discover real expressions through short movie scenes, with explanations for your level. '
         'Choose your learning language, explanation language and message frequency. '
-        'Save expressions and practise with /review.\n\nTap /start to get started.',
+        'Save expressions and practise with /review.\n\nTap /start to get started.'),
         'SceneLingo 🎬 Real expressions. Movie scenes. Learn at your own pace.',
     ),
     'ar': (
-        '🎬 المشهد يعدّي، والتعبير يفضل معاك.\n\n'
+        ('🎬 المشهد يعدّي، والتعبير يفضل معاك.\n\n'
         'اتعلّم تعبيرات حقيقية من مشاهد أفلام قصيرة، بشرح يناسب مستواك. '
         'اختار لغة التعلّم ولغة الشرح ومواعيد الرسائل. '
-        'احفظ التعبيرات وراجعها على مهلك من /review.\n\nابدأ من /start.',
+        'احفظ التعبيرات وراجعها على مهلك من /review.\n\nابدأ من /start.'),
         'SceneLingo 🎬 لغة من قلب المشهد. تعبيرات حقيقية تتعلّمها وتراجعها على مهلك.',
     ),
 }
@@ -43,7 +43,7 @@ def configure_profile(api):
         api('setMyName', name='SceneLingo', language_code=language)
         api('setMyDescription', description=description, language_code=language)
         api('setMyShortDescription', short_description=short, language_code=language)
-        commands = [dict(command=cmd, description=ar if language == 'ar' else en)
+        commands = [{'command': cmd, 'description': ar if language == 'ar' else en}
                     for cmd, en, ar in COMMANDS]
         # Default and all-private-chat scopes; explicit en/ar avoid stale overrides.
         for scope in ({'type': 'default'}, {'type': 'all_private_chats'}):

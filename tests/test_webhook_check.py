@@ -1,7 +1,7 @@
 import os
 import unittest
-from unittest.mock import patch
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from scripts import check_webhook
 

@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from clip_cafe import find_clip
 from multilingual import verify_audio
@@ -17,7 +18,7 @@ with TemporaryDirectory() as out:
     try:
         clip = find_clip(phrase, Path(out), verify=lambda path, text: verify_audio(path, text, lang), audio_language=lang)
         result = f'verified {clip.clip_id}'
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - live-provider probe reports any unavailable sample
         result = f'unavailable: {type(exc).__name__}'
     print(f'::notice title=Audio sample {lang}::{result}', flush=True)
     if result.startswith('unavailable:'):
