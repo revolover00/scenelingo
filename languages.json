@@ -1,12 +1,52 @@
 [
-  {"code": "en", "name": "English", "label": "English"},
-  {"code": "zh", "name": "Mandarin Chinese", "label": "中文"},
-  {"code": "hi", "name": "Hindi", "label": "हिन्दी"},
-  {"code": "es", "name": "Spanish", "label": "Español"},
-  {"code": "fr", "name": "French", "label": "Français"},
-  {"code": "ar", "name": "Arabic", "label": "العربية"},
-  {"code": "pt", "name": "Portuguese", "label": "Português"},
-  {"code": "ru", "name": "Russian", "label": "Русский"},
-  {"code": "de", "name": "German", "label": "Deutsch"},
-  {"code": "ja", "name": "Japanese", "label": "日本語"}
+  {
+    "code": "en",
+    "name": "English",
+    "label": "English"
+  },
+  {
+    "code": "zh",
+    "name": "Mandarin Chinese",
+    "label": "中文"
+  },
+  {
+    "code": "es",
+    "name": "Spanish",
+    "label": "Español"
+  },
+  {
+    "code": "fr",
+    "name": "French",
+    "label": "Français"
+  },
+  {
+    "code": "ar",
+    "name": "Arabic",
+    "label": "العربية"
+  },
+  {
+    "code": "pt",
+    "name": "Portuguese",
+    "label": "Português"
+  },
+  {
+    "code": "ru",
+    "name": "Russian",
+    "label": "Русский"
+  },
+  {
+    "code": "de",
+    "name": "German",
+    "label": "Deutsch"
+  },
+  {
+    "code": "ja",
+    "name": "Japanese",
+    "label": "日本語"
+  },
+  {
+    "code": "ko",
+    "name": "Korean",
+    "label": "한국어"
+  }
 ]
