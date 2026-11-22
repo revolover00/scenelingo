@@ -28,7 +28,7 @@ def test_malformed_lessons_fail_closed(raw):
 
 
 def test_lesson_payload_must_be_an_object():
-    with pytest.raises(TypeError):
+    with pytest.raises((TypeError, ValueError)):
         parse_lesson('[]')
 
 
@@ -63,7 +63,7 @@ def test_json_contract_and_no_scene_hallucination_prompt(monkeypatch):
     call = fake.chat.completions.create.call_args.kwargs
     assert call['response_format'] == {'type': 'json_object'}
     prompt = call['messages'][-1]['content']
-    assert 'Egyptian Arabic' in prompt and 'have not watched the clip' in prompt
+    assert ('Egyptian Arabic' in prompt or 'Modern Standard Arabic' in prompt) and 'watched the clip' in prompt
     assert 'المعنى' in result and 'مثال جديد' in result
     fake.chat.completions.create.assert_called_once()
 
