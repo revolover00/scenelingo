@@ -2,14 +2,12 @@
 import os
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
-
 import db
-from bot_identity import database_schema
 from config import config
+from bot_identity import database_schema
 from scripts.bot_profile import configure_profile
 from webhook_auth import webhook_secret
 
@@ -24,8 +22,8 @@ def main():
         try:
             response = requests.post(f'{base}/{method}', json=payload, timeout=30)
             body = response.json()
-        except (requests.RequestException, ValueError) as error:
-            raise RuntimeError(f'Telegram {method} request failed') from error
+        except Exception:
+            raise RuntimeError(f'Telegram {method} request failed') from None
         if not response.ok or not body.get('ok'):
             raise RuntimeError(f'Telegram {method} failed (HTTP {response.status_code})')
         return body['result']
@@ -41,7 +39,7 @@ def main():
         print('::notice title=Bot profile::Name, descriptions, commands and menu applied and verified; webhook unchanged', flush=True)
         return
     db.init_db()
-    with db.session() as conn, conn.cursor() as cur:
+    with db.connect() as conn, conn.cursor() as cur:
         cur.execute('SELECT count(*), count(*) FILTER (WHERE is_active) FROM subscribers')
         total, active = cur.fetchone()
     url = os.environ.get('WEBHOOK_URL', 'https://scenelingoo.vercel.app/api/telegram')
