@@ -113,7 +113,7 @@ def meaning(phrase: str, learning: str, explanation: str, level: str) -> str:
     norm_example = _re.sub(r'[^\w]+', '', data.get('example','').lower())
     if norm_phrase and norm_phrase == norm_example:
         raise ValueError('Model returned example identical to phrase')
-    if len(data.get('meaning','').split()) > 6:
+    if len(data.get('meaning','').split()) > 4:
         raise ValueError('Model returned verbose meaning - must be 2-4 words')
     return render_lesson(data, explanation)
 
