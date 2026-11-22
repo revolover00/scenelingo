@@ -16,19 +16,17 @@ def validate_language(code: str):
     return code
 def validate_interval(value):
     if isinstance(value, bool):
-        raise TypeError('bool not allowed')
-    if isinstance(value, float):
-        raise TypeError('float not allowed')
-    if value is None:
-        raise TypeError('None not allowed')
-    if isinstance(value, str) and value.strip() == "":
+        raise ValueError
+    if value is None or (isinstance(value, str) and value.strip() == ""):
         raise ValueError
     try:
         if isinstance(value, str):
             value = int(value.strip())
+        elif isinstance(value, float):
+            raise ValueError
         else:
             value = int(value)
-    except (ValueError, TypeError):
+    except:
         raise ValueError
     if not (30 <= value <= 1440):
         raise ValueError
